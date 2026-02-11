@@ -166,15 +166,16 @@ class PluginFrontend {
       });
     }
 
-    // Display checkbox
+    // Display checkbox (same pattern as font size, colors: update state then convert)
     const displayInput = document.getElementById('display') as HTMLInputElement;
     if (displayInput) {
-      displayInput.addEventListener('change', (e) => {
+      displayInput.addEventListener('input', (e) => {
+        const checked = (e.target as HTMLInputElement).checked;
         const state = this.stateStore.getState();
         this.stateStore.updateState({
           renderOptions: {
             ...state.renderOptions,
-            display: (e.target as HTMLInputElement).checked
+            display: checked
           }
         });
         this.convert();
@@ -813,7 +814,7 @@ class PluginFrontend {
       this.stateStore.updateState({ 
         currentSVGWrapper: null,
         lastRenderedTex: null,
-        lastRenderedDisplay: null
+        lastRenderedDisplay: options.display
       });
       return Promise.resolve();
     }
