@@ -71,7 +71,9 @@
   grid-row: 2;
 }
 
-.subexpression-row input[type="text"] {
+/* Apply to expression and occurrence inputs only - not color picker inputs */
+.subexpression-row .subexpression-tex,
+.subexpression-row .subexpression-occurrence {
   width: 100%;
   padding: 0.25rem;
   font-family: monospace;

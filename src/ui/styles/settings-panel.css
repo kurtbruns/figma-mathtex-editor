@@ -29,14 +29,6 @@
   width: 80px;
 }
 
-#settings-panel input[type="color"] {
-  width: 24px;
-  height: 27px;
-  padding: 0;
-  border: none;
-  background: none;
-}
-
 #settings-panel input[type="text"],
 #settings-panel input[type="number"] {
   background: var(--figma-color-bg);
@@ -44,12 +36,6 @@
   border: 1px solid var(--figma-color-border);
   border-radius: 3px;
   padding: 0.25rem;
-}
-
-#settings-panel #background-color,
-#settings-panel #font-color {
-  width: 80px;
-  margin-left: 0.5rem;
 }
 
 #settings-panel #font-size {

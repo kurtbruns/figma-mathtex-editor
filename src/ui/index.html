@@ -18,16 +18,7 @@
             </div>
             <div>
               <label for="background-color">Background</label>
-              <input type="color" id="background-color-picker">
-              <input
-                type="text"
-                id="background-color"
-                maxlength="6"
-                placeholder="000000"
-                onchange="onColorTextChange('background-color')"
-                onfocus="selectAllText(event)"
-                onmousedown="selectAllText(event)"
-              >
+              <div id="background-color-picker-container"></div>
             </div>
             <div>
               <label for="font-size">Font size</label>
@@ -44,16 +35,7 @@
             </div>
             <div>
               <label for="font-color">Font color</label>
-              <input type="color" id="font-color-picker">
-              <input
-                type="text"
-                id="font-color"
-                maxlength="6"
-                placeholder="E0E0E0"
-                onchange="onColorTextChange('font-color')"
-                onfocus="selectAllText(event)"
-                onmousedown="selectAllText(event)"
-              >
+              <div id="font-color-picker-container"></div>
             </div>
           </div>
           <div id="subexpression-styling">

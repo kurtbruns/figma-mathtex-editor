@@ -12,6 +12,12 @@
   gap: 0.5rem;
   user-select: none;
   transition: background-color 0.2s;
+  background: var(--figma-color-bg-secondary);
+  color: var(--figma-color-text);
+}
+
+#preview-header:hover {
+  background: var(--figma-color-bg-hover);
 }
 
 #preview-toggle {
@@ -37,6 +43,7 @@
   max-height: 500px;
   padding: 0.5rem;
   overflow: auto;
+  background: var(--figma-color-bg);
 }
 
 #preview-output.collapsed {

@@ -7,7 +7,8 @@
 import { StateStore } from '../core/StateStore';
 import { SubExpressionStyle } from '../types';
 import { SubExpressionErrorCallbacks } from '../mathRenderer';
-import { expandColor, getNextSubExpressionColor } from '../utils';
+import { expandColor, getNextSubExpressionColor, toHex8 } from '../utils';
+import { ColorPicker } from './ColorPicker';
 
 /**
  * Component for managing sub-expression styles
@@ -21,8 +22,9 @@ export class SubExpressionStyles {
   private onDirectStylingUpdateCallback?: () => void;
   private getTheme: () => string;
   private unsubscribe: (() => void) | null = null;
-  private activeColorPickers: Set<HTMLInputElement> = new Set(); // Track active color pickers
+  private activeColorPickerIndices: Set<number> = new Set(); // Track rows with active color picker
   private existingRows: Map<number, HTMLElement> = new Map(); // Track existing rows by index
+  private colorPickersByRow: Map<number, ColorPicker> = new Map(); // ColorPicker instances per row
 
   constructor(
     container: HTMLElement,
@@ -136,11 +138,8 @@ export class SubExpressionStyles {
       if (!newRowIndices.has(index)) {
         const row = existingRowElements.get(index);
         if (row) {
-          // Clean up active color picker tracking
-          const picker = row.querySelector('.subexpression-color-picker') as HTMLInputElement;
-          if (picker) {
-            this.activeColorPickers.delete(picker);
-          }
+          this.activeColorPickerIndices.delete(index);
+          this.colorPickersByRow.delete(index);
           row.remove();
           this.existingRows.delete(index);
         }
@@ -169,8 +168,7 @@ export class SubExpressionStyles {
     row.setAttribute('data-row-index', index.toString());
 
     const texInput = row.querySelector('.subexpression-tex') as HTMLInputElement;
-    const colorPicker = row.querySelector('.subexpression-color-picker') as HTMLInputElement;
-    const colorText = row.querySelector('.subexpression-color') as HTMLInputElement;
+    const colorPicker = this.colorPickersByRow.get(index);
     const occurrenceInput = row.querySelector('.subexpression-occurrence') as HTMLInputElement;
 
     // Update expression
@@ -178,17 +176,10 @@ export class SubExpressionStyles {
       texInput.value = style.expression;
     }
 
-    // Update color (only if picker is not active)
-    const colorValueRaw = style.color.replace(/^#/, '') || '5DA6F7';
-    const colorValue = expandColor(colorValueRaw);
-    
-    if (colorText && colorText.value !== colorValue) {
-      colorText.value = colorValue;
-    }
-    
-    // Only update color picker if it's not currently active
-    if (colorPicker && !this.activeColorPickers.has(colorPicker) && colorPicker.value !== '#' + colorValue) {
-      colorPicker.value = '#' + colorValue;
+    // Update color picker (only if not currently active)
+    const colorValue = toHex8(style.color || '#5DA6F7FF');
+    if (colorPicker && !this.activeColorPickerIndices.has(index) && colorPicker.getValue() !== colorValue) {
+      colorPicker.setValue(colorValue);
     }
 
     // Update occurrences
@@ -206,22 +197,13 @@ export class SubExpressionStyles {
     row.className = 'subexpression-row';
     row.setAttribute('data-row-index', index.toString());
 
-    // Normalize color: strip # prefix if present, then expand (text inputs don't have #)
-    const colorValueRaw = style.color.replace(/^#/, '') || '5DA6F7';
-    const colorValue = expandColor(colorValueRaw);
     const occurrenceValue = style.occurrences || '';
+    const colorValue = toHex8(style.color || '#5DA6F7FF');
 
     row.innerHTML = `
       <input type="text" class="subexpression-tex" placeholder="exp" value="${this.escapeHtml(style.expression)}" 
              data-row-index="${index}">
-      <div class="color-inputs">
-        <input type="color" class="subexpression-color-picker" value="#${colorValue}" 
-               data-row-index="${index}">
-        <input type="text" class="subexpression-color" maxlength="6" placeholder="808080" value="${colorValue}" 
-               data-row-index="${index}"
-               onfocus="this.select()"
-               onmousedown="event.preventDefault(); this.select()">
-      </div>
+      <div class="color-inputs" data-row-index="${index}"></div>
       <input type="text" class="subexpression-occurrence" placeholder="1,2 ..." value="${this.escapeHtml(occurrenceValue)}" 
              data-row-index="${index}">
       <button data-row-index="${index}">−</button>
@@ -231,65 +213,28 @@ export class SubExpressionStyles {
       <div class="grid-spacer"></div>
     `;
 
-    // Attach event listeners
     const texInput = row.querySelector('.subexpression-tex') as HTMLInputElement;
-    const colorPicker = row.querySelector('.subexpression-color-picker') as HTMLInputElement;
-    const colorText = row.querySelector('.subexpression-color') as HTMLInputElement;
+    const colorInputsContainer = row.querySelector('.color-inputs') as HTMLElement;
     const occurrenceInput = row.querySelector('.subexpression-occurrence') as HTMLInputElement;
     const removeButton = row.querySelector('button') as HTMLButtonElement;
 
-    // Track color picker focus/blur to prevent closing dialog during interaction
-    if (colorPicker) {
-      colorPicker.addEventListener('focus', () => {
-        this.activeColorPickers.add(colorPicker);
-      });
-
-      colorPicker.addEventListener('blur', () => {
-        this.activeColorPickers.delete(colorPicker);
-      });
-    }
+    const colorPicker = new ColorPicker(colorInputsContainer, {
+      value: colorValue,
+      useAlpha: true,
+      onFocus: () => this.activeColorPickerIndices.add(index),
+      onBlur: () => this.activeColorPickerIndices.delete(index),
+      onChange: (value) => {
+        this.onUpdate(index, 'color', value);
+        this.onDirectStylingUpdateCallback?.();
+        this.onChangeCallback?.();
+      }
+    });
+    this.colorPickersByRow.set(index, colorPicker);
 
     texInput.addEventListener('change', () => this.onUpdate(index, 'expression', texInput.value.trim()));
     texInput.addEventListener('input', () => {
       this.onUpdate(index, 'expression', texInput.value.trim());
       this.onChangeCallback?.();
-    });
-
-    colorPicker.addEventListener('input', () => {
-      const expanded = expandColor(colorPicker.value);
-      colorText.value = expanded;
-      this.onUpdate(index, 'color', '#' + expanded);
-      // Directly update styling from state store (bypass DOM sync for immediate update)
-      this.onDirectStylingUpdateCallback?.();
-    });
-
-    colorPicker.addEventListener('change', () => {
-      const expanded = expandColor(colorPicker.value);
-      colorText.value = expanded;
-      this.onUpdate(index, 'color', '#' + expanded);
-      this.onChangeCallback?.();
-    });
-
-    colorText.addEventListener('input', () => {
-      const value = colorText.value.trim();
-      if (/^[0-9A-Fa-f]{1,6}$/i.test(value)) {
-        const expanded = expandColor(value);
-        colorPicker.value = '#' + expanded.substring(0, 6);
-        // Don't update state/styling on input - wait for change event (Enter/blur)
-      }
-      this.onChangeCallback?.();
-    });
-
-    colorText.addEventListener('change', () => {
-      const value = colorText.value.trim();
-      if (/^[0-9A-Fa-f]{1,6}$/i.test(value)) {
-        const expanded = expandColor(value);
-        colorText.value = expanded.substring(0, 6);
-        colorPicker.value = '#' + expanded.substring(0, 6);
-        this.onUpdate(index, 'color', '#' + expanded);
-        // Directly update styling from state store (bypass DOM sync for immediate update)
-        this.onDirectStylingUpdateCallback?.();
-      }
     });
 
     occurrenceInput.addEventListener('change', () => {
@@ -419,8 +364,8 @@ export class SubExpressionStyles {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-    // Clean up active color pickers tracking
-    this.activeColorPickers.clear();
+    this.activeColorPickerIndices.clear();
+    this.colorPickersByRow.clear();
     this.existingRows.clear();
   }
 }

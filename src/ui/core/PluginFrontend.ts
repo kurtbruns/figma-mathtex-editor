@@ -5,12 +5,15 @@
 import { StateStore, AppState } from './StateStore';
 import { typesetMath, TypesettingOptions, SubExpressionErrorCallbacks, setSVGColor, applySubExpressionColors, styleErrorNodes } from '../mathRenderer';
 import { SubExpressionStyles } from '../components/SubExpressionStyles';
+import { ColorPicker } from '../components/ColorPicker';
 import { RenderOptions, UserPreferences, SubExpressionStyle } from '../types';
-import { expandColor, THEME_DEFAULTS, MATHJAX_DEFAULT_FONT_SIZE, DEFAULT_RENDER_OPTIONS } from '../utils';
+import { expandColor, toHex8, THEME_DEFAULTS, MATHJAX_DEFAULT_FONT_SIZE, DEFAULT_RENDER_OPTIONS } from '../utils';
 
 class PluginFrontend {
   private stateStore!: StateStore; // Initialized in initialize()
   private subExpression: SubExpressionStyles | null = null;
+  private bgColorPicker: ColorPicker | null = null;
+  private fontColorPicker: ColorPicker | null = null;
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   private previewInitialized: boolean = false;
   private initializationResolver: ((value: void | PromiseLike<void>) => void) | null = null;
@@ -61,30 +64,37 @@ class PluginFrontend {
   }
 
   /**
+   * Detect Figma theme from iframe (figma-light or figma-dark class on html)
+   * Falls back to OS prefers-color-scheme if Figma classes not yet injected
+   */
+  private detectFigmaTheme(): string {
+    const html = document.documentElement;
+    if (html.classList.contains('figma-dark')) return 'dark';
+    if (html.classList.contains('figma-light')) return 'light';
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    return mediaQuery.matches ? 'dark' : 'light';
+  }
+
+  /**
    * Load initial state from DOM
    */
   private loadInitialStateFromDOM(): void {
-    // Detect OS theme first
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const isDark = mediaQuery.matches;
-    const theme = isDark ? 'dark' : 'light';
+    // Use Figma theme (figma-light/figma-dark on html) when available
+    const theme = this.detectFigmaTheme();
 
     const texInput = document.getElementById('input') as HTMLTextAreaElement;
     const displayInput = document.getElementById('display') as HTMLInputElement;
     const fontSizeInput = document.getElementById('font-size') as HTMLInputElement;
-    const bgcolorInput = document.getElementById('background-color') as HTMLInputElement;
-    const fontcolorInput = document.getElementById('font-color') as HTMLInputElement;
 
-    // Use theme defaults if inputs are empty
-    const bgcolorRaw = bgcolorInput?.value.trim() || THEME_DEFAULTS[theme]?.background || THEME_DEFAULTS.dark.background;
-    const fontcolorRaw = fontcolorInput?.value.trim() || THEME_DEFAULTS[theme]?.font || THEME_DEFAULTS.dark.font;
+    const bgcolorRaw = THEME_DEFAULTS[theme]?.background || THEME_DEFAULTS.dark.background;
+    const fontcolorRaw = THEME_DEFAULTS[theme]?.font || THEME_DEFAULTS.dark.font;
 
     const renderOptions: RenderOptions = {
       tex: texInput?.value.trim() || '',
       display: displayInput?.checked ?? DEFAULT_RENDER_OPTIONS.display,
       fontSize: fontSizeInput ? parseFloat(fontSizeInput.value) : DEFAULT_RENDER_OPTIONS.fontSize,
-      backgroundColor: '#' + expandColor(bgcolorRaw),
-      fontColor: '#' + expandColor(fontcolorRaw),
+      backgroundColor: toHex8('#' + expandColor(bgcolorRaw)),
+      fontColor: toHex8('#' + expandColor(fontcolorRaw)),
       subExpressionStyles: []
     };
 
@@ -189,9 +199,35 @@ class PluginFrontend {
       });
     }
 
-    // Color inputs
-    this.setupColorInputs('background-color');
-    this.setupColorInputs('font-color');
+    // Color pickers
+    const bgContainer = document.getElementById('background-color-picker-container');
+    const fontContainer = document.getElementById('font-color-picker-container');
+    if (bgContainer) {
+      const state = this.stateStore.getState();
+      this.bgColorPicker = new ColorPicker(bgContainer, {
+        value: state.renderOptions.backgroundColor,
+        hexInputId: 'background-color',
+        onChange: (value) => {
+          this.stateStore.updateState({
+            renderOptions: { ...this.stateStore.getState().renderOptions, backgroundColor: value }
+          });
+          this.convert();
+        }
+      });
+    }
+    if (fontContainer) {
+      const state = this.stateStore.getState();
+      this.fontColorPicker = new ColorPicker(fontContainer, {
+        value: state.renderOptions.fontColor,
+        hexInputId: 'font-color',
+        onChange: (value) => {
+          this.stateStore.updateState({
+            renderOptions: { ...this.stateStore.getState().renderOptions, fontColor: value }
+          });
+          this.convert();
+        }
+      });
+    }
 
     // Place button
     const placeButton = document.getElementById('place') as HTMLButtonElement;
@@ -230,69 +266,9 @@ class PluginFrontend {
 
     // Make functions available globally for inline handlers
     (window as any).convert = () => this.convert();
-    (window as any).onColorTextChange = (colorId: string) => this.onColorTextChange(colorId);
     (window as any).saveUserPreferences = () => this.saveUserPreferences();
     (window as any).selectAllText = (event: FocusEvent | MouseEvent) => this.selectAllText(event);
     (window as any).togglePreview = () => this.togglePreview();
-  }
-
-  /**
-   * Set up color input handlers
-   */
-  private setupColorInputs(colorId: string): void {
-    const picker = document.getElementById(colorId + '-picker') as HTMLInputElement;
-    const text = document.getElementById(colorId) as HTMLInputElement;
-    
-    if (!picker || !text) return;
-
-    // When picker changes, update text (without #) and update state
-    picker.addEventListener('input', () => {
-      const expanded = expandColor(picker.value);
-      text.value = expanded;
-      const state = this.stateStore.getState();
-      const field = colorId === 'background-color' ? 'backgroundColor' : 'fontColor';
-      this.stateStore.updateState({
-        renderOptions: {
-          ...state.renderOptions,
-          [field]: '#' + expanded
-        }
-      });
-      this.convert();
-    });
-
-    // Sync initial values
-    const currentValue = text.value.trim() || picker.value.replace(/^#/, '');
-    const expanded = expandColor(currentValue);
-    text.value = expanded;
-    picker.value = '#' + expanded;
-  }
-
-  /**
-   * Handle color text input change
-   */
-  private onColorTextChange(colorId: string): void {
-    const picker = document.getElementById(colorId + '-picker') as HTMLInputElement;
-    const text = document.getElementById(colorId) as HTMLInputElement;
-    if (!picker || !text) return;
-
-    const value = text.value.trim();
-    const expanded = expandColor(value);
-    
-    // Validate: should be 1-6 hex digits
-    if (/^[0-9A-Fa-f]{1,6}$/i.test(value)) {
-      text.value = expanded.substring(0, 6);
-      picker.value = '#' + expanded.substring(0, 6);
-      
-      const state = this.stateStore.getState();
-      const field = colorId === 'background-color' ? 'backgroundColor' : 'fontColor';
-      this.stateStore.updateState({
-        renderOptions: {
-          ...state.renderOptions,
-          [field]: '#' + expanded.substring(0, 6)
-        }
-      });
-      this.convert();
-    }
   }
 
   /**
@@ -351,27 +327,15 @@ class PluginFrontend {
       }
     }
 
-    // Update colors (strip # prefix for text inputs)
-    const bgcolorRaw = state.renderOptions.backgroundColor.replace(/^#/, '');
-    const bgcolorExpanded = expandColor(bgcolorRaw);
-    const bgcolorInput = document.getElementById('background-color') as HTMLInputElement;
-    const bgcolorPicker = document.getElementById('background-color-picker') as HTMLInputElement;
-    if (bgcolorInput && bgcolorInput.value !== bgcolorExpanded) {
-      bgcolorInput.value = bgcolorExpanded;
-    }
-    if (bgcolorPicker && bgcolorPicker.value !== state.renderOptions.backgroundColor) {
-      bgcolorPicker.value = state.renderOptions.backgroundColor;
+    // Update color pickers
+    const bgNormalized = state.renderOptions.backgroundColor || DEFAULT_RENDER_OPTIONS.backgroundColor;
+    if (this.bgColorPicker && this.bgColorPicker.getValue() !== bgNormalized) {
+      this.bgColorPicker.setValue(bgNormalized);
     }
 
-    const fontcolorRaw = state.renderOptions.fontColor.replace(/^#/, '');
-    const fontcolorExpanded = expandColor(fontcolorRaw);
-    const fontcolorInput = document.getElementById('font-color') as HTMLInputElement;
-    const fontcolorPicker = document.getElementById('font-color-picker') as HTMLInputElement;
-    if (fontcolorInput && fontcolorInput.value !== fontcolorExpanded) {
-      fontcolorInput.value = fontcolorExpanded;
-    }
-    if (fontcolorPicker && fontcolorPicker.value !== state.renderOptions.fontColor) {
-      fontcolorPicker.value = state.renderOptions.fontColor;
+    const fontNormalized = state.renderOptions.fontColor || DEFAULT_RENDER_OPTIONS.fontColor;
+    if (this.fontColorPicker && this.fontColorPicker.getValue() !== fontNormalized) {
+      this.fontColorPicker.setValue(fontNormalized);
     }
 
     // Don't change preview visibility automatically - respect user's choice
@@ -493,7 +457,7 @@ class PluginFrontend {
         fontColor: message.selection.nodeData.renderOptions?.fontColor || DEFAULT_RENDER_OPTIONS.fontColor,
         subExpressionStyles: (message.selection.nodeData.renderOptions?.subExpressionStyles || []).map((style: any) => ({
           expression: style.expression || '',
-          color: style.color || '#000000',
+          color: toHex8(style.color || '#000000FF'),
           occurrences: style.occurrences
         }))
       };
@@ -754,7 +718,7 @@ class PluginFrontend {
       fontColor: prefs.fontColor || DEFAULT_RENDER_OPTIONS.fontColor,
       subExpressionStyles: (prefs.subExpressionStyles || []).map((style: any) => ({
         expression: style.expression || '',
-        color: style.color || '#000000',
+        color: toHex8(style.color || '#000000FF'),
         occurrences: style.occurrences
       }))
     };
@@ -840,9 +804,9 @@ class PluginFrontend {
     // Check if TeX input is empty
     const trimmedTex = options.tex.trim();
     if (!trimmedTex) {
-      // Display helpful message for empty input
+      // Display helpful message for empty input (use font color to match preview background)
       const messageElement = document.createElement('div');
-      messageElement.style.cssText = 'padding: 1rem; text-align: center; color: var(--figma-color-text-secondary, #999); font-style: italic;';
+      messageElement.style.cssText = `padding: 1rem; text-align: center; color: ${options.fontColor}; font-style: italic;`;
       messageElement.textContent = 'Enter a TeX expression above';
       output.appendChild(messageElement);
       
@@ -892,7 +856,10 @@ class PluginFrontend {
         }
       })
       .catch((err: Error) => {
-        output.appendChild(document.createElement('pre')).appendChild(document.createTextNode(err.message));
+        const pre = document.createElement('pre');
+        pre.style.cssText = `color: ${options.fontColor}; padding: 1rem; margin: 0; white-space: pre-wrap;`;
+        pre.appendChild(document.createTextNode(err.message));
+        output.appendChild(pre);
         this.stateStore.updateState({
           currentSVGWrapper: null,
           lastRenderedTex: null,
@@ -1085,7 +1052,7 @@ class PluginFrontend {
       fontColor: message.renderOptions?.fontColor || DEFAULT_RENDER_OPTIONS.fontColor,
       subExpressionStyles: (message.renderOptions?.subExpressionStyles || []).map((style: any) => ({
         expression: style.expression || '',
-        color: style.color || '#000000',
+        color: toHex8(style.color || '#000000FF'),
         occurrences: style.occurrences
       }))
     };

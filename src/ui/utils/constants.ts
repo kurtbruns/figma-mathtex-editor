@@ -13,8 +13,8 @@ export const MATHJAX_DEFAULT_FONT_SIZE = 13.5;
  */
 export const DEFAULT_RENDER_OPTIONS = {
   fontSize: 24,
-  backgroundColor: '#000000',
-  fontColor: '#EEEEEE',
+  backgroundColor: '#000000FF',
+  fontColor: '#EEEEEEFF',
   display: true,
 } as const;
 
@@ -67,6 +67,6 @@ export const DARK_THEME_COLORS: string[] = [
 export function getNextSubExpressionColor(theme: string, currentCount: number): string {
   const colors = theme === 'light' ? LIGHT_THEME_COLORS : DARK_THEME_COLORS;
   const colorIndex = currentCount % colors.length;
-  return '#' + colors[colorIndex];
+  return '#' + colors[colorIndex] + 'FF';
 }
 

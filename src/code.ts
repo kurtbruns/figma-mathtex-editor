@@ -269,19 +269,17 @@ class PluginBackend {
   }
 
   /**
-   * Convert hex color to RGB
+   * Convert hex6 or hex8 to RGB and optional alpha for Figma SolidPaint.
+   * Hex6 defaults to opacity 1.
    */
-  private hexToRgb(hex: string): { r: number; g: number; b: number } {
-    const c = hex.replace('#', '');
-    if (c.length !== 6) {
-      console.warn(`Expected 6-digit hex color with # prefix, got: ${hex}`);
-    }
-    const num = parseInt(c, 16);
-    return { 
-      r: ((num >> 16) & 255) / 255, 
-      g: ((num >> 8) & 255) / 255, 
-      b: (num & 255) / 255 
-    };
+  private hexToRgba(hex: string): { r: number; g: number; b: number; a: number } {
+    const c = hex.replace('#', '').toUpperCase();
+    const rgb = c.length >= 6 ? c.substring(0, 6) : c.padEnd(6, '0');
+    const r = parseInt(rgb.substring(0, 2), 16) / 255;
+    const g = parseInt(rgb.substring(2, 4), 16) / 255;
+    const b = parseInt(rgb.substring(4, 6), 16) / 255;
+    const a = c.length >= 8 ? parseInt(c.substring(6, 8), 16) / 255 : 1;
+    return { r, g, b, a };
   }
 
   /**
@@ -340,7 +338,8 @@ class PluginBackend {
           
           // Update background size and color
           background.resize(svg.width + margin * 2, svg.height + margin * 2);
-          background.fills = [{ type: 'SOLID', color: this.hexToRgb(bgcolor) }];
+          const bgRgba = this.hexToRgba(bgcolor || DEFAULT_RENDER_OPTIONS.backgroundColor);
+          background.fills = [{ type: 'SOLID', color: { r: bgRgba.r, g: bgRgba.g, b: bgRgba.b }, opacity: bgRgba.a }];
           
           // Add new SVG to group
           group.appendChild(svg);
@@ -354,7 +353,7 @@ class PluginBackend {
             backgroundColor: pluginMessage.backgroundColor || DEFAULT_RENDER_OPTIONS.backgroundColor,
             subExpressionStyles: (pluginMessage.subExpressionStyles || []).map((style: any) => ({
               expression: style.expression || '',
-              color: style.color || '#000000',
+              color: style.color || '#000000FF',
               occurrences: style.occurrences
             }))
           }));
@@ -377,7 +376,8 @@ class PluginBackend {
     svg.x = figma.viewport.center.x - svg.width / 2;
     svg.y = figma.viewport.center.y - svg.height / 2;
 
-    background.fills = [{ type: 'SOLID', color: this.hexToRgb(bgcolor) }];
+    const bgRgba = this.hexToRgba(bgcolor || DEFAULT_RENDER_OPTIONS.backgroundColor);
+    background.fills = [{ type: 'SOLID', color: { r: bgRgba.r, g: bgRgba.g, b: bgRgba.b }, opacity: bgRgba.a }];
 
     // Create the background rectangle, make it bigger than the SVG by the margin amount
     background.resize(svg.width + margin * 2, svg.height + margin * 2);
@@ -399,7 +399,7 @@ class PluginBackend {
       backgroundColor: pluginMessage.backgroundColor || DEFAULT_RENDER_OPTIONS.backgroundColor,
       subExpressionStyles: (pluginMessage.subExpressionStyles || []).map((style: any) => ({
         expression: style.expression || '',
-        color: style.color || '#000000',
+        color: style.color || '#000000FF',
         occurrences: style.occurrences
       }))
     }));
